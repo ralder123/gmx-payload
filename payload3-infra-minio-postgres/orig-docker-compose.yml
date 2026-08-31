@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: gmx-payload-postgres
+    environment:
+      POSTGRES_USER: payload_dev
+      POSTGRES_PASSWORD: payload_dev_pass
+      POSTGRES_DB: payload_dev_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "payload_dev", "-d", "payload_dev_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    container_name: gmx-payload-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "9000:9000"  # MinIO API (Payload connects here)
+      - "9001:9001"  # MinIO Web Console (Open this in your browser)
+    volumes:
+      - miniodata:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: gmx-payload-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set localminio http://minio:9000 minioadmin minioadmin; do echo 'Waiting for MinIO...'; sleep 1; done;
+      /usr/bin/mc mb --ignore-existing localminio/payload-media;
+      /usr/bin/mc policy set download localminio/payload-media;
+      echo 'Bucket payload-media initialized successfully!';
+      exit 0;
+      "
+
+volumes:
+  pgdata:
+    name: gmx_payload_pgdata
+  miniodata:
+    name: gmx_payload_miniodata
